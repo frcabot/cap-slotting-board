@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CAP Slotting Board</title>
+<meta name="description" content="Rank and slot Civil Air Patrol activity registrations from Reg Zone exports. Runs in your browser; nothing is uploaded.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</body>
+</html>
+<style>
+/* Layout: settings rail on the left (stacks on phones), ranked slot list on the right with a visible slot line. */
+:root{
+  --bg:#F3F5F8; --panel:#FFFFFF; --ink:#141B2B; --muted:#5A6377; --line:#DCE1E9; --soft:#EBEFF5;
+  --accent:#2F55C8; --accent-ink:#FFFFFF; --accent-soft:#E3E9FA;
+  --in:#17795A; --in-soft:#DDF2EA; --alt:#9A6200; --alt-soft:#FBEFD8; --out:#A8331F; --out-soft:#F8E1DC;
+  --ex:#7A4BC2; --ex-soft:#EEE6FA;
+  --f-display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F141E; --panel:#171E2B; --ink:#E7ECF5; --muted:#9AA4B8; --line:#2A3446; --soft:#1E2737;
+  --accent:#7C9BFF; --accent-ink:#0F141E; --accent-soft:#22305A;
+  --in:#5BD1A4; --in-soft:#173A2F; --alt:#F0B65A; --alt-soft:#3A2E17; --out:#FF8C78; --out-soft:#3D211C;
+  --ex:#B994F5; --ex-soft:#2D2440; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F141E; --panel:#171E2B; --ink:#E7ECF5; --muted:#9AA4B8; --line:#2A3446; --soft:#1E2737;
+  --accent:#7C9BFF; --accent-ink:#0F141E; --accent-soft:#22305A;
+  --in:#5BD1A4; --in-soft:#173A2F; --alt:#F0B65A; --alt-soft:#3A2E17; --out:#FF8C78; --out-soft:#3D211C;
+  --ex:#B994F5; --ex-soft:#2D2440; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px;max-width:1500px;margin:0 auto}
+header.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:16px}
+h1{font-family:var(--f-display);font-weight:800;font-size:26px;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+.src{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:7px 12px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:4px 9px;font-size:12.5px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--ex-soft);color:var(--ink);border:1px dashed var(--ex);border-radius:8px;padding:10px 14px;margin-bottom:16px}
+.banner b{color:var(--ex)}
+.drop.over{outline:2px dashed var(--accent);outline-offset:6px}
+.grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:minmax(0,1fr)}}
+aside{display:flex;flex-direction:column;gap:12px}
+@media (min-width:981px){aside{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;padding-right:4px}}
+details.sec{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+details.sec>summary{list-style:none;cursor:pointer;padding:10px 14px;font-family:var(--f-display);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::after{content:"+";color:var(--muted);font-family:var(--f-mono)}
+details.sec[open]>summary::after{content:"–"}
+.sec-body{padding:0 14px 14px;display:flex;flex-direction:column;gap:12px}
+label.row,.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.row>span{color:var(--ink)}
+.hint{color:var(--muted);font-size:12px;line-height:1.35}
+input[type=number],input[type=text],select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+input[type=number]{width:78px;font-family:var(--f-mono);text-align:right}
+textarea{width:100%;font-family:var(--f-mono);font-size:12px;min-height:70px;resize:vertical}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg label{flex:1;text-align:center;padding:6px 4px;cursor:pointer;font-size:12.5px;color:var(--muted)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--accent);color:var(--accent-ink);font-weight:600}
+.factor{border-top:1px solid var(--soft);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.factor:first-child{border-top:0;padding-top:0}
+.factor .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.factor .head b{font-weight:600}
+.factor .pts{font-family:var(--f-mono);font-size:13px;color:var(--accent);min-width:56px;text-align:right}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.inline{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.inline input[type=number]{width:62px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+.tile .k{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tile .v{font-family:var(--f-display);font-weight:800;font-size:24px;font-variant-numeric:tabular-nums;line-height:1.15}
+.tile .v small{font-family:var(--f-body);font-weight:500;font-size:13px;color:var(--muted)}
+.tile .d{font-size:12px;color:var(--muted)}
+.bar{height:5px;border-radius:3px;background:var(--soft);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--in)}
+.bar.over i{background:var(--out)}
+.warn{background:var(--out-soft);color:var(--ink);border-left:3px solid var(--out);padding:8px 12px;border-radius:4px;margin-bottom:10px;font-size:13px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px}
+.tools .l,.tools .r{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:4px 10px;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tablebox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:auto;max-height:78vh}
+table{border-collapse:collapse;width:100%;min-width:1020px;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--soft);text-align:left;white-space:nowrap;vertical-align:middle}
+th{position:sticky;top:0;background:var(--panel);z-index:1;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+th.num,td.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+td.total{font-weight:600;color:var(--ink)}
+td .nm{font-weight:500}
+td .gr{color:var(--muted);font-size:12px;margin-right:4px}
+tr.cut td{background:var(--soft);color:var(--ink);font-family:var(--f-display);font-weight:600;font-size:12px;letter-spacing:.08em;text-transform:uppercase;text-align:center;padding:5px;border-top:2px solid var(--ink)}
+tr.inel td{color:var(--muted)}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;border-radius:4px;padding:2px 7px;letter-spacing:.02em}
+.pill.in{background:var(--in-soft);color:var(--in)}
+.pill.alt{background:var(--alt-soft);color:var(--alt)}
+.pill.out{background:var(--out-soft);color:var(--out)}
+.tag{display:inline-block;font-size:11.5px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;margin-right:4px;color:var(--muted)}
+.tag.wl{border-color:var(--alt);color:var(--alt)}
+.tag.ps{border-color:var(--in);color:var(--in)}
+.tag.rz{border-color:var(--accent);color:var(--accent)}
+.tag.why{border-color:var(--out);color:var(--out)}
+.tag.lock{border-color:var(--ink);color:var(--ink)}
+td.notes{white-space:normal;min-width:150px;max-width:230px}
+.why{cursor:help;display:inline-flex;align-items:center;gap:3px}
+.agebox{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.agetbl{min-width:0;width:auto;font-size:12.5px}
+.agetbl th,.agetbl td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--soft);white-space:nowrap;position:static;cursor:default;text-transform:none;letter-spacing:0}
+.agetbl th:first-child{text-align:left}
+.agetbl tbody tr:last-child th,.agetbl tbody tr:last-child td{border-bottom:0}
+.whybox{position:fixed;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:560px;margin:0 auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 14px;z-index:20;white-space:pre-line;font-size:13px}
+.whybox #whyClose{float:right;margin-left:8px}
+.whybox b{display:block;margin-bottom:4px}
+.whyq{font-size:10px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center}
+td.notes .tag{display:block;width:fit-content;max-width:100%;margin:2px 0;white-space:normal;line-height:1.3}
+.tag.oos{border-color:var(--ex);color:var(--ex);background:var(--ex-soft);font-weight:600;font-size:10.5px;padding:0 4px;margin-left:3px;margin-right:0;letter-spacing:.03em}
+td select{padding:2px 4px;font-size:12px}
+.copybox{width:100%;min-height:120px;margin-top:8px}
+.foot{color:var(--muted);font-size:12px;margin-top:10px}
+.toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+.files{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.files .f{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px}
+.files .f .nm{font-family:var(--f-mono);font-size:12px;overflow-wrap:anywhere}
+.files .f .ev{color:var(--muted)}
+body{margin:0}
+</style>
+</head>
+<body>
+
+<div class="wrap drop" id="dropzone">
+  <header class="top">
+    <div>
+      <h1>CAP Slotting Board</h1>
+      <div class="sub" id="srcline">Example data · load a Reg Zone registration export to start</div>
+    </div>
+    <div class="src">
+      <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple hidden>
+      <button class="btn primary" id="btnLoad">Load Reg Zone exports</button>
+      <button class="btn" id="btnForget" hidden>Forget saved data</button>
+      <span class="hint" id="loadHint">Pick (or drop on the page) the registration export for the activity you are slotting. Add the staff export to find parents on staff. Files are read in this browser only; nothing is uploaded.</span>
+    </div>
+  </header>
+
+  <div class="banner" id="exampleBanner"><b>Example data.</b> These cadets are made up, to show how the board works. Click <b style="color:inherit">Load Reg Zone exports</b> to slot real registrations. What you load is kept in this browser only, so it is still here next time, until you click Forget saved data.</div>
+  <div class="files" id="files" hidden></div>
+  <div id="loadMsg" class="hint" style="margin-bottom:10px" hidden></div>
+  <div id="extraMsg" class="hint" style="margin-bottom:10px"></div>
+
+  <div class="grid">
+    <aside>
+      <details class="sec" open>
+        <summary>Slots</summary>
+        <div class="sec-body">
+          <div class="seg" role="radiogroup" aria-label="Slot mode">
+            <label><input type="radio" name="mode" id="modeCombined" value="combined">One pool</label>
+            <label><input type="radio" name="mode" id="modeSeparate" value="separate">Separate male / female</label>
+          </div>
+          <label class="row"><span>Total slots (including already slotted)</span><input type="number" id="total" min="0"></label>
+          <div id="combinedBox" class="sec-body" style="padding:0">
+            <label class="row"><span>Max male <span class="hint">(blank = no cap)</span></span><input type="number" id="capM" min="0"></label>
+            <label class="row"><span>Max female <span class="hint">(blank = no cap)</span></span><input type="number" id="capF" min="0"></label>
+          </div>
+          <div id="separateBox" class="sec-body" style="padding:0">
+            <label class="row"><span>Male slots</span><input type="number" id="poolM" min="0"></label>
+            <label class="row"><span>Female slots</span><input type="number" id="poolF" min="0"></label>
+          </div>
+          <div class="hint" id="shareNote"></div>
+          <div class="inline"><button class="btn small" id="btnShare">Split slots by registration share</button></div>
+          <label class="row"><span>Keep everyone already Slotted in Reg Zone</span><input type="checkbox" id="keepSlotted"></label>
+          <label class="row"><span>Always slot cadets with a parent on staff</span><input type="checkbox" id="autoParent"></label>
+          <div class="row"><span>Out-of-state cadets</span><span class="inline"><select id="oosMode"><option value="none">No limit</option><option value="max">At most</option><option value="exact">Exactly</option></select><input type="number" id="oosN" min="0"></span></div>
+          <div class="hint" id="oosNote"></div>
+          <div class="hint" id="slotNote"></div>
+          <div class="hint">Total slots include cadets already slotted. Kept and always-slotted cadets fill slots first; the open slots that are left go by points. Ties go to whoever registered first.</div>
+        </div>
+      </details>
+
+      <details class="sec" open>
+        <summary>Requirements</summary>
+        <div class="sec-body">
+          <div class="hint">Unit and parent approval are set in Points, where each can be required, worth points, or both.</div>
+          <label class="row"><span>Cadets only (senior members are not eligible)</span><input type="checkbox" id="cadetsOnly"></label>
+          <label class="row"><span>Lowest grade that can be slotted</span><select id="minRank"></select></label>
+          <div class="hint">Lower grades stay on the alternate list in points order, so you can see where they would land once promoted.</div>
+          <div class="row"><span>Age at start</span><span class="inline"><input type="number" id="minAge" min="0" max="25"> to <input type="number" id="maxAge" min="0" max="25"></span></div>
+          <div class="hint">Outside this age range or status list = not eligible at all.</div>
+          <div><div style="margin-bottom:4px">Reg Zone statuses to include</div><div class="chips" id="statusChips"></div></div>
+        </div>
+      </details>
+
+      <details class="sec" open>
+        <summary>Points</summary>
+        <div class="sec-body" id="factors"></div>
+      </details>
+
+      <details class="sec">
+        <summary>Priority list</summary>
+        <div class="sec-body">
+          <div class="hint">Optional. A list of cadets who should get extra points, for example the waitlist from a previous activity that ran out of room. Paste one cadet per line: CAPID alone, or list number and CAPID in either order (for example "13 123456"). Give it points in Points. Saved in this browser only.</div>
+          <label class="row"><span>Name of this list</span><input type="text" id="wlName" style="width:170px" maxlength="40"></label>
+          <textarea id="wlText" spellcheck="false" placeholder="13 123456&#10;6 234567"></textarea>
+          <div class="hint" id="wlCount"></div>
+        </div>
+      </details>
+
+      <details class="sec">
+        <summary>Save and share settings</summary>
+        <div class="sec-body">
+          <div class="hint">Settings and manual Slot / Leave out choices are saved in this browser. To give them to someone else, copy them and have them paste them here. Settings include the CAPIDs of any manual choices, but no names or other registration data.</div>
+          <div class="inline"><button class="btn small" id="btnCopySettings">Copy settings</button><button class="btn small" id="btnApplySettings">Apply pasted settings</button><button class="btn small" id="btnReset">Reset to defaults</button></div>
+          <textarea id="settingsText" spellcheck="false" placeholder="Paste copied settings here, then Apply"></textarea>
+          <div id="resetConfirm" class="inline" hidden><span class="hint">Reset all settings and manual choices?</span><button class="btn small" id="btnResetYes">Reset</button><button class="btn small" id="btnResetNo">Cancel</button></div>
+        </div>
+      </details>
+    </aside>
+
+    <main style="min-width:0">
+      <div class="tiles" id="tiles"></div>
+      <div id="ageLine" style="margin:-2px 0 12px"></div>
+      <div id="warnings"></div>
+      <div class="tools">
+        <div class="l">
+          <div class="chips" id="viewChips"></div>
+          <div class="chips" id="sexChips"></div>
+        </div>
+        <div class="r">
+          <label class="chip" style="display:inline-flex;gap:6px;align-items:center;cursor:pointer" title="Blind review: replaces names, CAPIDs and parent names with a code, so cadets are judged on the numbers only"><input type="checkbox" id="maskNames"> Hide names</label>
+          <input type="text" id="search" placeholder="Search name or CAPID" aria-label="Search">
+          <button class="btn small" id="btnCopySlots">Copy slot list</button>
+          <button class="btn small" id="btnCopyNew">Copy CAPIDs to slot in Reg Zone</button>
+          <button class="btn small" id="btnCopyAll">Copy full results</button>
+          <button class="btn small" id="btnDownload">Download results (.xlsx)</button>
+        </div>
+      </div>
+      <textarea id="copyFallback" class="copybox" hidden readonly></textarea>
+      <div class="tablebox"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+      <div class="foot" id="foot"></div>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<div class="whybox" id="whyBox" role="dialog" aria-live="polite" hidden><button class="btn small" id="whyClose" aria-label="Close">Close</button><div id="whyText"></div></div>
+
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const RANKS = ['C/AB','C/Amn','C/A1C','C/SrA','C/SSgt','C/TSgt','C/MSgt','C/SMSgt','C/CMSgt'];
+const STORE = 'capSlottingBoard.v1';
+
+const DEFAULTS = {
+  mode:'combined', total:100, capM:'', capF:'', poolM:75, poolF:25,
+  keepSlotted:true, autoParent:true, oosMode:'none', oosN:10,
+  reqUnit:true, reqParent:true, cadetsOnly:true, minRank:'C/AB', minAge:11, maxAge:20,
+  statuses:{},            // status -> include (missing = decide by name)
+  w:{ rank:30, age:20, state:0, order:40, wl:0, pstaff:0, unit:0, papp:0, tenure:0, pace:0, stuck:0 }, stuckFull:12,
+  tenureDir:'more', tenureAuto:true, tenureTop:24, missingMode:'median',
+  ageLo:12, ageHi:20, ageAuto:true, states:'', stateSrc:'address',
+  tieMode:'none', tieN:0, tieId:'', tieDate:'',
+  wlMode:'flat', wlName:'Priority list',
+  pins:{}, view:'all', sex:'all', sort:'rank', sortDir:1, mask:false
+};
+let S = load();
+function niceDay(d){ try{ return new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'}); }catch(e){ return d; } }
+let wlText = loadWl();
+let DATA = null;
+let RESULT = null;
+let FILES = [];          // Reg Zone exports read in this session: {name, ev, rows, role: 'slot'|'staff'|'ignore'}
+
+/* ---------- storage ---------- */
+function load(){ try{ const s=JSON.parse(localStorage.getItem(STORE)||'null'); if(s) return merge(structuredClone(DEFAULTS), s);}catch(e){} return structuredClone(DEFAULTS); }
+function merge(a,b){ for(const k in b){ if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])&&a[k]&&typeof a[k]==='object') merge(a[k],b[k]); else a[k]=b[k]; } return a; }
+function save(){ try{ localStorage.setItem(STORE, JSON.stringify(S)); }catch(e){} }
+function loadWl(){ try{ return localStorage.getItem(STORE+'.wl')||''; }catch(e){ return ''; } }
+function saveWl(){ try{ localStorage.setItem(STORE+'.wl', wlText); }catch(e){} }
+
+/* ---------- helpers ---------- */
+const clean = v => (v===null||v===undefined)?'':(v instanceof Date?isoDay(v):String(v).replace(/\s+/g,' ').trim());
+const lc = v => clean(v).toLowerCase();
+const alpha = v => lc(v).replace(/[^a-z]/g,'');
+const phone10 = v => { const d=clean(v).replace(/\D/g,''); return d.length>=10?d.slice(-10):''; };
+const PART = /^(van|von|der|den|de|del|della|di|da|das|do|dos|du|la|le|ten|ter|y|e|bin|binti|al|el)$/;
+function nameCase(v){
+  const t=clean(v); if(!t) return t;
+  if(t===t.toLowerCase()||t===t.toUpperCase()) return t.toLowerCase().replace(/(^|[\s\-'])([a-z])/g,(m,a,b)=>a+b.toUpperCase());
+  return t.split(' ').map(w=>(!w||PART.test(w)||w[0]!==w[0].toLowerCase())?w:w[0].toUpperCase()+w.slice(1)).join(' ');
+}
+function rankIdx(r){ const t=clean(r); if(!t||/^cadet$/i.test(t)||/^c\/ab$/i.test(t)) return 0; const i=RANKS.findIndex(x=>x.toLowerCase()===t.toLowerCase()); if(i>=0) return i; if(/^c\/(2dlt|1stlt|capt|maj|ltcol|col)/i.test(t)) return 8; return 0; }
+function rankLabel(r){ const t=clean(r); return (!t||/^cadet$/i.test(t))?'C/AB':t; }
+function sexOf(g){ const t=lc(g); return t.startsWith('m')?'M':t.startsWith('f')?'F':'?'; }
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => (Math.round(n*10)/10).toFixed(1);
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+const pad2 = n => String(n).padStart(2,'0');
+function isoDay(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+// Any date a spreadsheet may hold -> Date (or null): a real date cell, an Excel day number, "22 Sep 2026", "9/22/2026", "2026-09-22"
+function toDate(v){
+  if(v instanceof Date) return isNaN(v)?null:v;
+  if(typeof v==='number'&&isFinite(v)&&v>20000&&v<80000) return new Date(Math.round((v-25569)*864e5)+new Date().getTimezoneOffset()*6e4);
+  const t=clean(v); if(!t) return null;
+  let m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t); if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  m=/^(\d{1,2})[ -]([A-Za-z]{3})[A-Za-z]*[ -,]*(\d{4})/.exec(t);
+  if(m){ const mo=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(m[2].toLowerCase()); if(mo>=0) return new Date(+m[3],mo,+m[1]); }
+  m=/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(t); if(m){ const y=+m[3]<100?2000+ +m[3]:+m[3]; return new Date(y,+m[1]-1,+m[2]); }
+  const d=new Date(t); return isNaN(d)?null:d;
+}
+const dayOf = v => { const d=toDate(v); return d?isoDay(d):''; };
+
+/* ---------- data ---------- */
+function cadetFrom(r){
+  const age = Number(r.AgeAtEventStart!==undefined&&clean(r.AgeAtEventStart)!==''?r.AgeAtEventStart:r.Age);
+  const hasAge = clean(r.AgeAtEventStart)!==''||clean(r.Age)!=='';
+  return {
+    capid: clean(r.RegistrantsCAPID), rank: rankLabel(r.Rank), ri: rankIdx(r.Rank), mbr: lc(r.MbrType),
+    first: nameCase(r.NameFirst), last: nameCase(r.NameLast), sex: sexOf(r.Gender),
+    age: hasAge&&isFinite(age)?age:null, state: clean(r.State).toUpperCase(), wing: clean(r.Wing).toUpperCase(), unit: clean(r.Unit),
+    regId: Number(r.RegistrationID)||0, edit: dayOf(r.AppEditDate), status: clean(r.RegistrationStatus), unitOk: lc(r.UnitApproved)==='yes',
+    parent: clean(r.ParentApproved),
+    pem: [r.CadetParentEmailPrimary,r.CadetParentEmailSecondary,r.CadetParentEmailEmergency].map(lc).filter(Boolean),
+    pph: [r.CadetParentPhonePrimary,r.CadetParentPhoneSecondary,r.CadetParentPhoneEmergency,r.EmergencyContactNumber].map(phone10).filter(Boolean),
+    addr: clean(r.Addr1)?(lc(r.Addr1).replace(/[^a-z0-9]/g,'').slice(0,12)+'|'+clean(r.Zip).slice(0,5)):'',
+    ec: alpha(r.EmergencyContactName), parentStaff: ''
+  };
+}
+function linkParents(cadets, staff){
+  const adults = staff.filter(a=>lc(a.MbrType)!=='cadet');
+  for(const c of cadets){
+    const hits=[];
+    for(const a of adults){
+      let sig=0;
+      if(lc(a.Email)&&c.pem.includes(lc(a.Email))) sig++;
+      const ap=[phone10(a.CellPhonePrimary),phone10(a.HomePhonePrimary)].filter(Boolean); if(ap.some(p=>c.pph.includes(p))) sig++;
+      if(c.addr && clean(a.Addr1) && (lc(a.Addr1).replace(/[^a-z0-9]/g,'').slice(0,12)+'|'+clean(a.Zip).slice(0,5))===c.addr) sig++;
+      const af=alpha(clean(a.NameFirst).split(' ')[0]), al=alpha(a.NameLast);
+      if(al && af && c.ec.includes(af) && c.ec.includes(al)) sig++;
+      if(al && al===alpha(c.last) && clean(a.Unit) && clean(a.Unit)===c.unit) sig++;
+      if(sig) hits.push(rankLabel(a.Rank)+' '+nameCase(a.NameFirst)+' '+nameCase(a.NameLast));
+    }
+    c.parentStaff = [...new Set(hits)].join('; ');
+  }
+}
+function makeExample(){
+  let s=42; const rnd=()=>{ s=(s*1103515245+12345)%2147483648; return s/2147483648; };
+  const FN=['Avery','Jordan','Riley','Casey','Morgan','Quinn','Rowan','Skyler','Emerson','Parker','Hayden','Reese','Logan','Elliot','Sawyer','Blake','Drew','Finley','Harper','Jules'];
+  const LN=['Example','Sample','Testcase','Placeholder','Demo','Mockridge','Fakeley','Pretendo','Notreal','Specimen'];
+  const st=['Alternate','Alternate','Alternate','Alternate','Alternate','Alternate','Slotted','Pending Unit'];
+  const rows=[]; const d0=new Date(2026,0,10);
+  for(let i=0;i<140;i++){
+    const age=12+Math.floor(rnd()*7);
+    const ed=new Date(d0.getTime()+Math.floor(i/6+rnd()*4)*864e5);
+    rows.push({RegistrantsCAPID:900100+i,Rank:['CADET','C/Amn','C/Amn','C/Amn','C/A1C','C/SrA','C/SSgt','C/TSgt','C/MSgt','C/CMSgt'][Math.floor(rnd()*10)],MbrType:'CADET',
+      NameFirst:FN[Math.floor(rnd()*FN.length)],NameLast:LN[Math.floor(rnd()*LN.length)],Gender:rnd()<0.75?'MALE':'FEMALE',AgeAtEventStart:age,
+      State:rnd()<0.92?'XA':['XB','XC','XD'][Math.floor(rnd()*3)],Wing:'XA',Unit:String(100+Math.floor(rnd()*40)),RegistrationID:100000+i*37,AppEditDate:ed,
+      RegistrationStatus:st[Math.floor(rnd()*st.length)],UnitApproved:rnd()<0.93?'Yes':'No',ParentApproved:age>=18?'N/A':(rnd()<0.9?'Approved':'Pending')});
+  }
+  const cadets=rows.map(cadetFrom); cadets[3].parentStaff='2d Lt Example Parent';
+  return {cadets, example:true, files:[], staffCount:0, ev:'Example activity'};
+}
+// In-state list: what you typed, or (left blank) the most common home state (or wing) among the registrations
+function stateOf(c){ return S.stateSrc==='wing'?c.wing:c.state; }
+function effectiveStates(){
+  const typed=String(S.states||'').split(/[\s,;]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+  if(typed.length) return {list:typed, auto:false};
+  const n={}; (DATA?DATA.cadets:[]).forEach(c=>{ const s=stateOf(c); if(s) n[s]=(n[s]||0)+1; });
+  const top=Object.entries(n).sort((a,b)=>b[1]-a[1])[0];
+  return {list:top?[top[0]]:[], auto:true};
+}
+
+/* ---------- time in CAP / time in grade (optional extra file) ---------- */
+// Any sheet with a CAPID column and either "Months in CAP" or a join date. Time in grade from "Months in grade" or a date of current grade.
+let EXTRA=loadExtra();
+function loadExtra(){ try{ const x=JSON.parse(localStorage.getItem(STORE+'.extra')||'null'); if(x&&x.by) return x; }catch(e){} return {by:{},name:'',loadedAt:''}; }
+function extraCols(row){
+  const ks=Object.keys(row||{}), f=re=>ks.find(k=>re.test(String(k).trim()));
+  return { cap:f(/^(capid|cap ?id|cap ?#|registrantscapid|member ?id|member ?#)$/i),
+    mCap:f(/^months? in cap$/i), join:f(/join(ed)?[ _]?date|date[ _]?(of[ _]?)?join|^joined$|original join/i),
+    mGr:f(/^months? in grade$/i), gDate:f(/(grade|rank|promotion)[ _]?date|date[ _]?of[ _]?(current[ _]?)?(grade|rank|promotion)|^dor$|effective date/i) };
+}
+function isExtraSheet(rows){ if(!rows.length) return false; const c=extraCols(rows[0]); return !!(c.cap&&(c.mCap||c.join)&&!('RegistrationID' in rows[0])); }
+const monthsSince = d => Math.max(0, Math.floor((Date.now()-d.getTime())/864e5/30.44));
+function extraFromRows(rows,name){
+  const c=extraCols(rows[0]); const by={}; let n=0;
+  for(const r of rows){
+    const cap=clean(r[c.cap]); if(!/^\d{5,7}$/.test(cap)) continue;
+    let mc=null, mg=null;
+    if(c.mCap&&clean(r[c.mCap])!==''&&isFinite(Number(r[c.mCap]))) mc=Number(r[c.mCap]);
+    else if(c.join){ const d=toDate(r[c.join]); if(d) mc=monthsSince(d); }
+    if(c.mGr&&clean(r[c.mGr])!==''&&isFinite(Number(r[c.mGr]))) mg=Number(r[c.mGr]);
+    else if(c.gDate){ const d=toDate(r[c.gDate]); if(d) mg=monthsSince(d); }
+    by[cap]={cap:mc, grade:mg}; if(mc!==null) n++;
+  }
+  EXTRA={by,name,loadedAt:new Date().toISOString(),n};
+  try{ localStorage.setItem(STORE+'.extra', JSON.stringify(EXTRA)); }catch(e){}
+  return n;
+}
+const EIGHT_WEEKS_MO=56/30.44;
+// Months in CAP, corrected: a cadet cannot have been in a grade longer than in CAP. When the file says otherwise (usually a member who
+// rejoined, so the file counts from the newest join date), use the time in grade as the minimum time in CAP.
+function capMonths(ex){ if(!ex||ex.cap===null||ex.cap===undefined) return null; return (ex.grade!==null&&ex.grade!==undefined&&ex.grade>ex.cap)?ex.grade:ex.cap; }
+// Promotion pace: grades earned vs the most possible. C/Amn has NO time-in-grade requirement; every later grade needs at least 8 weeks.
+// So after m months the most possible is 1 + floor(m / 8 weeks), up to C/CMSgt (8 grades).
+function paceFrac(ri,m){ if(ri>=8) return 1; const possible=Math.min(8,1+Math.floor(m/EIGHT_WEEKS_MO)); return Math.min(1,ri/possible); }
+function stuckFrac(ri, mGr){ if(ri>=8) return 0; if(mGr===null||mGr===undefined) return null; const full=Math.max(EIGHT_WEEKS_MO+0.5,Number(S.stuckFull)||12);
+  return Math.min(1,Math.max(0,(mGr-EIGHT_WEEKS_MO)/(full-EIGHT_WEEKS_MO))); }
+function extraRowsFromWb(wb){ for(const nm of wb.SheetNames){ const r=XLSX.utils.sheet_to_json(wb.Sheets[nm],{defval:''}); if(isExtraSheet(r)) return r; } return null; }
+function downloadTemplate(){
+  const ws=XLSX.utils.aoa_to_sheet([['CAPID','Join date','Date of current grade'],['123456','2024-03-15','2026-01-20']]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Time in CAP'); XLSX.writeFile(wb,'Time_in_CAP_template.xlsx');
+}
+
+/* ---------- files ---------- */
+// Which Reg Zone export is which: staff if the activity or file name says staff or cadre; anything else can be slotted.
+function guessRole(ev,name){ return /\b(staff|cadre)\b/i.test(ev)||/staff|cadre/i.test(name)?'staff':'slot'; }
+async function readFiles(list){
+  const msgs=[]; const added=[];
+  for(const f of list){
+    try{
+      const buf=await f.arrayBuffer(); const wb=XLSX.read(buf,{type:'array',cellDates:true});
+      const xr=extraRowsFromWb(wb);
+      if(xr){ const n=extraFromRows(xr,f.name); msgs.push('Read time in CAP for '+n+' cadets from '+f.name+'.'); continue; }
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      if(!rows.length||!('RegistrantsCAPID' in rows[0])){ msgs.push(f.name+': not a Reg Zone registration export (no RegistrantsCAPID column), and not a time-in-CAP file. Skipped.'); continue; }
+      const ev=clean(rows[0].EventName).split('|')[0].trim()||f.name;
+      FILES=FILES.filter(x=>x.name!==f.name);
+      const x={name:f.name, ev, rows, role:guessRole(ev,f.name)}; FILES.push(x); added.push(x);
+    }catch(e){ msgs.push(f.name+': could not be read ('+e.message+').'); }
+  }
+  // Only one export is slotted at a time: the newest one that looks like students. Earlier ones are set to Ignore (change it under the file list).
+  const newSlot=added.filter(x=>x.role==='slot');
+  if(newSlot.length){ const keep=newSlot.reduce((a,b)=>b.rows.length>a.rows.length?b:a);
+    FILES.forEach(x=>{ if(x.role==='slot'&&x!==keep) x.role='ignore'; });
+    if(newSlot.length>1) msgs.push(newSlot.length+' of these files look like student registrations. Slotting '+keep.name+' (the largest). Pick another below if that is wrong.'); }
+  applyFiles(msgs);
+}
+function applyFiles(msgs){
+  msgs=msgs||[];
+  const slot=FILES.find(x=>x.role==='slot'), staff=FILES.filter(x=>x.role==='staff');
+  const staffRows=staff.flatMap(x=>x.rows);
+  if(slot){
+    useRows(slot, staff);
+    if(!staff.length) msgs.push('No staff export loaded, so "parent on staff" is blank. Load the staff export too to fill it in.');
+    msgs.unshift('Slotting '+DATA.cadets.length+' registrations from '+slot.name+(staff.length?', with '+staffRows.length+' staff from '+staff.map(x=>x.name).join(' + '):'')+'.');
+  } else if(staff.length && DATA && !DATA.example){
+    linkParents(DATA.cadets, staffRows); DATA.staffCount=staffRows.length; saveData(); msgs.unshift('Matched parents on staff from '+staff.map(x=>x.name).join(' + ')+'.');
+  } else if(staff.length){ msgs.unshift('Staff export read. Now load the registration export for the activity you are slotting.'); }
+  renderFiles(); showExtra();
+  $('loadMsg').hidden=!msgs.length; $('loadMsg').textContent=msgs.join(' ');
+  run();
+}
+function renderFiles(){
+  const box=$('files'); box.hidden=!FILES.length;
+  box.innerHTML=FILES.map((x,i)=>`<div class="f"><span class="nm">${esc(x.name)}</span><span class="ev">${esc(x.ev)} · ${x.rows.length} registrations</span>
+    <select data-i="${i}" aria-label="Use of ${esc(x.name)}"><option value="slot">Slot these registrations</option><option value="staff">Staff (find parents on staff)</option><option value="ignore">Ignore</option></select></div>`).join('');
+  box.querySelectorAll('select').forEach(sel=>{ sel.value=FILES[+sel.dataset.i].role; sel.addEventListener('change',e=>{ const x=FILES[+e.target.dataset.i];
+    if(e.target.value==='slot') FILES.forEach(y=>{ if(y.role==='slot') y.role='ignore'; });
+    x.role=e.target.value; applyFiles(); }); });
+}
+function saveData(){ try{ localStorage.setItem(STORE+'.data', JSON.stringify(DATA)); }catch(e){} }
+function useRows(slot, staff){
+  const cadets=slot.rows.map(cadetFrom).filter(c=>c.capid);
+  DATA={cadets, example:false, files:[slot.name], staffCount:0, ev:slot.ev, loadedAt:new Date().toISOString()};
+  if(staff.length){ const sr=staff.flatMap(x=>x.rows); linkParents(cadets, sr); DATA.staffCount=sr.length; DATA.files.push(...staff.map(x=>x.name)); }
+  saveData(); showSource(); buildStatusChips();
+}
+// Blind review: a fixed code per cadet (from the CAPID, so it does not change when the list is re-sorted or the data is refreshed)
+const MASK=new Map();
+function maskHash(capid){ let h=2166136261; for(const ch of String(capid)){ h^=ch.charCodeAt(0); h=Math.imul(h,16777619); } return [(h>>>0)%26,(h>>>5)%1000]; }
+function buildMask(cs){ MASK.clear(); const used=new Set();
+  for(const c of [...cs].sort((a,b)=>String(a.capid).localeCompare(String(b.capid)))){ let [l,n]=maskHash(c.capid), code;
+    do{ code='Cadet '+String.fromCharCode(65+l)+'-'+String(n).padStart(3,'0'); n=(n+1)%1000; }while(used.has(code)); used.add(code); MASK.set(c.capid,code); } }
+function maskCode(capid){ return MASK.get(capid)||'Cadet ?'; }
+function showExtra(){
+  const n=Object.values(EXTRA.by||{}).filter(x=>x.cap!=null).length;
+  $('extraMsg').innerHTML=n?`Time in CAP and time in grade: ${n} cadets, from ${esc(EXTRA.name||'a loaded file')} (${EXTRA.loadedAt?new Date(EXTRA.loadedAt).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):''}). Load a newer copy any time.`
+    :`Time in CAP and time in grade: not loaded (optional). Reg Zone exports do not include them. To use those factors, load a spreadsheet with CAPID, Join date and Date of current grade (or Months in CAP and Months in grade). <button class="btn small" id="btnTemplate" type="button">Download a blank template</button>`;
+  const b=$('btnTemplate'); if(b) b.addEventListener('click',downloadTemplate);
+}
+function showSource(){
+  const when=d=>d?new Date(d).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';
+  $('srcline').textContent=DATA.ev+' · '+DATA.files.join(' + ')+' · loaded '+when(DATA.loadedAt);
+  $('exampleBanner').hidden=true; $('btnForget').hidden=false;
+}
+function loadSaved(){
+  try{ const d=JSON.parse(localStorage.getItem(STORE+'.data')||'null'); if(d&&Array.isArray(d.cadets)&&d.cadets.length){ d.example=false; return d; } }catch(e){}
+  return null;
+}
+
+/* ---------- sign-up order ---------- */
+// Reg Zone exports have no registration date. RegistrationID is a counter, so a lower ID registered earlier.
+// "Tied" cadets all get full sign-up points (for example everyone who registered on opening day).
+//  none: no tie, strict order.  first: the first N registrations.  id: RegistrationID up to X.
+//  date: registered on or before a day. Worked out from the export: a registration happened no later than the
+//        last-edit date (AppEditDate) of anyone who registered after it. Only counts someone the export PROVES registered by then.
+function tiedSet(cs){
+  const m=S.tieMode, out=new Set();
+  if(m==='first'){ const n=Math.max(0,Number(S.tieN)||0); [...cs].filter(c=>c.regId).sort((a,b)=>a.regId-b.regId).slice(0,n).forEach(c=>out.add(c.capid)); }
+  else if(m==='id'){ const x=Number(S.tieId)||0; if(x) cs.forEach(c=>{ if(c.regId&&c.regId<=x) out.add(c.capid); }); }
+  else if(m==='date'&&/^\d{4}-\d{2}-\d{2}$/.test(String(S.tieDate))){
+    const byIdDesc=[...cs].sort((a,b)=>b.regId-a.regId); let runMin='9999-12-31';
+    for(const c of byIdDesc){ if(c.edit&&c.edit<runMin) runMin=c.edit; if(c.regId&&runMin<=S.tieDate) out.add(c.capid); }
+  }
+  return out;
+}
+
+/* ---------- waitlist ---------- */
+function parseWl(){
+  const m={};
+  for(const line of wlText.split(/\n+/)){
+    const nums=(line.match(/\d+/g)||[]);
+    const cap=nums.find(n=>n.length>=5&&n.length<=7); if(!cap) continue;
+    const pos=nums.find(n=>n!==cap&&n.length<=3);
+    m[cap]=pos?Number(pos):0;
+  }
+  return m;
+}
+
+/* ---------- scoring + selection ---------- */
+function statusIncluded(st){
+  if(st in S.statuses) return S.statuses[st];
+  return !/(cancel|withdr|disappr|denied|declin|reject)/i.test(st);
+}
+let RUNINFO={tenTop:24,nExtra:0,states:[],statesAuto:true};
+function run(){
+  const W=S.w, wl=parseWl(), wlMax=Math.max(1,...Object.values(wl));
+  const ST=effectiveStates(), states=ST.list;
+  const cs=DATA.cadets;
+  const tied=tiedSet(cs);
+  cs.forEach(c=>{ c.tied=tied.has(c.capid); });
+  const later=cs.filter(c=>!c.tied).sort((a,b)=>a.regId-b.regId);
+  const laterPos=new Map(later.map((c,i)=>[c.capid,i]));
+  const minRi=RANKS.indexOf(S.minRank);
+  const dataMaxAge=Math.max(0,...cs.map(c=>c.age??0));
+  buildMask(cs);
+  const caps=cs.map(c=>capMonths(EXTRA.by[c.capid])).filter(x=>x!==null);
+  const tenTop=S.tenureAuto?Math.max(1,...caps):Math.max(1,Number(S.tenureTop)||24);
+  const med=a=>{ if(!a.length) return 0; const b=[...a].sort((x,y)=>x-y); return b[Math.floor(b.length/2)]; };
+  const medTen=med(caps.map(m=>{ const t=Math.min(1,m/tenTop); return S.tenureDir==='fewer'?1-t:t; }));
+  const medPace=med(cs.filter(c=>capMonths(EXTRA.by[c.capid])!==null).map(c=>paceFrac(c.ri,capMonths(EXTRA.by[c.capid]))));
+  const medStuck=med(cs.filter(c=>c.ri<8&&(EXTRA.by[c.capid]||{}).grade!=null).map(c=>stuckFrac(c.ri,EXTRA.by[c.capid].grade)));
+  RUNINFO={tenTop, nExtra:caps.length, states, statesAuto:ST.auto};
+  const rows=cs.map(c=>{
+    const why=[], hold=[];
+    const parentOk=(c.age!==null&&c.age>=18)||lc(c.parent)==='approved';
+    if(!statusIncluded(c.status)) why.push('Status: '+(c.status||'blank'));
+    if(S.cadetsOnly && c.mbr && c.mbr!=='cadet') why.push('Not a cadet');
+    if(c.age!==null && (c.age<Number(S.minAge)||c.age>Number(S.maxAge))) why.push('Age '+c.age);
+    if(S.reqUnit && !c.unitOk) hold.push('Needs unit approval');
+    if(S.reqParent && !parentOk) hold.push('Needs parent approval');
+    if(c.ri<minRi) hold.push('Grade below '+S.minRank);
+    const p={};
+    p.rank=W.rank*c.ri/8;
+    const lo=Number(S.ageLo), hi=S.ageAuto?dataMaxAge:Number(S.ageHi);
+    p.age=c.age===null?0:W.age*Math.min(1,Math.max(0,(c.age-lo)/Math.max(1,hi-lo)));
+    p.state=states.includes(stateOf(c))?W.state:0;
+    if(c.tied) p.order=W.order;
+    else { const i=laterPos.get(c.capid); p.order=(i===undefined||!later.length)?0:W.order*(1-(i+1)/later.length); }
+    const wp=c.capid in wl?wl[c.capid]:null;
+    p.wl=wp===null?0:(S.wlMode==='graded'&&wp>0?W.wl*(1-(wp-1)/wlMax):W.wl);
+    p.pstaff=c.parentStaff&&!S.autoParent?W.pstaff:0;
+    p.appr=(c.unitOk?W.unit:0)+(parentOk?W.papp:0);
+    const ex=EXTRA.by[c.capid]||{}; const mGr=ex.grade??null, mCapFile=ex.cap??null, mCap=capMonths(ex);
+    const capFixed=mCapFile!==null&&mGr!==null&&mGr>mCapFile;
+    // Tenure: months in CAP on a 0..top scale (top = longest in the data, or a number you set). "fewer" flips it.
+    let ten=null, pace=null;
+    if(mCap!==null){ ten=Math.min(1,Math.max(0,mCap/Math.max(1,tenTop))); if(S.tenureDir==='fewer') ten=1-ten;
+      // Promotion pace: grades earned vs the most possible at one promotion every 8 weeks (C/CMSgt = top of the enlisted scale)
+      pace=paceFrac(c.ri,mCap); }
+    p.tenure=W.tenure*(ten===null?(S.missingMode==='median'?medTen:0):ten);
+    p.pace=W.pace*(pace===null?(S.missingMode==='median'?medPace:0):pace);
+    // Stuck in grade (a penalty): nothing for the first 8 weeks in a grade, then growing to the full penalty at stuckFull months.
+    // Never for C/CMSgt and up: their next step needs an encampment.
+    const stk=stuckFrac(c.ri, mGr);
+    p.stuck=-W.stuck*(c.ri>=8?0:(stk===null?(S.missingMode==='median'?medStuck:0):stk));
+    const total=p.rank+p.age+p.state+p.order+p.wl+p.pstaff+p.appr+p.tenure+p.pace+p.stuck;
+    return {...c, why, hold, parentOk, p, total, wlPos:wp, pin:S.pins[c.capid]||'', mCap, mGr, mCapFile, capFixed, paceRaw:pace};
+  });
+  const forcedIn=r=>r.pin==='in', forcedOut=r=>r.pin==='out';
+  const eligible=r=>!r.why.length;
+  const slottable=r=>!r.why.length&&!r.hold.length;
+  const locked=r=>!forcedOut(r)&&(forcedIn(r)||(eligible(r)&&((S.keepSlotted&&r.status==='Slotted')||(S.autoParent&&r.parentStaff&&slottable(r)))));
+  const cmp=(a,b)=>b.total-a.total||a.regId-b.regId||a.capid.localeCompare(b.capid);
+  const cnt={M:0,F:0,'?':0}; let n=0; const warn=[];
+  // Out of state only means something once an in-state list exists (typed, or the most common state in the data)
+  const isOut=r=>states.length>0&&!states.includes(stateOf(r));
+  rows.forEach(r=>{ r.out=isOut(r); });
+  let nOut=0; const oosN=S.oosMode==='none'?Infinity:Math.max(0,Number(S.oosN)||0);
+  rows.forEach(r=>{ r.state2='out'; r.lock=''; });
+  const L=rows.filter(locked).sort(cmp);
+  for(const r of L){ r.state2='in'; r.lock=forcedIn(r)?'Manual':(S.keepSlotted&&r.status==='Slotted')?'Reg Zone slotted':'Parent on staff'; cnt[r.sex]++; n++; if(r.out) nOut++; }
+  const kept={n, M:cnt.M, F:cnt.F, out:nOut};
+  const rest=rows.filter(r=>r.state2!=='in'&&eligible(r)&&!forcedOut(r)).sort(cmp);
+  const sep=S.mode==='separate';
+  const cap={M:S.capM===''?Infinity:Number(S.capM), F:S.capF===''?Infinity:Number(S.capF)};
+  const pool={M:Number(S.poolM)||0, F:Number(S.poolF)||0};
+  let cutScore=null;
+  const fits=r=>sep ? (r.sex!=='?'&&cnt[r.sex]<pool[r.sex]) : (n<Number(S.total)&&(r.sex==='?'||cnt[r.sex]<cap[r.sex]));
+  const take=r=>{ r.state2='in'; cnt[r.sex]++; n++; if(r.out) nOut++; cutScore=r.total; };
+  // "Exactly N" out of state: fill the out-of-state seats first (best points first), then everyone else.
+  if(S.oosMode==='exact') for(const r of rest){ if(nOut>=oosN) break; if(r.out&&!r.hold.length&&r.state2!=='in'&&fits(r)) take(r); }
+  for(const r of rest){
+    if(r.hold.length||r.state2==='in') continue;
+    if(r.out&&nOut>=oosN) continue;
+    if(fits(r)) take(r);
+  }
+  let a=0; const ag={M:0,F:0,'?':0};
+  for(const r of rest){ if(r.state2!=='in'){ r.state2='alt'; r.alt=++a; r.altG=++ag[r.sex]; } }
+  rows.forEach(r=>{ if(r.state2==='out') r.state2=forcedOut(r)?'outpin':'inel'; });
+  // ---- "Why" for each cadet: the deciding reason, then the factors that gave or cost the most points
+  const byPts=rows.filter(r=>r.state2==='in'&&!r.lock);
+  const cutOf=g=>{ const xs=byPts.filter(r=>!sep||r.sex===g).map(r=>r.total); return xs.length?Math.min(...xs):null; };
+  const cutAll=cutOf(null), cutG={M:cutOf('M'),F:cutOf('F')};
+  const FMAX={rank:['Grade',W.rank],age:['Age',W.age],state:['Home state',W.state],order:['Sign-up order',W.order],wl:[S.wlName||'Priority list',W.wl],appr:['Approvals',W.unit+W.papp],pstaff:['Parent on staff',S.autoParent?0:W.pstaff],tenure:['Time in CAP',W.tenure],pace:['Promotion pace',W.pace]};
+  const factorLines=r=>{ const f=Object.entries(FMAX).filter(([k,[,mx]])=>mx>0).map(([k,[nm,mx]])=>({nm,got:r.p[k]||0,lost:mx-(r.p[k]||0),mx}));
+    const top=[...f].sort((a,b)=>b.got-a.got).slice(0,3).filter(x=>x.got>0).map(x=>`${x.nm} +${fmt(x.got)} of ${x.mx}`);
+    const lost=[...f].sort((a,b)=>b.lost-a.lost).slice(0,3).filter(x=>x.lost>0.05).map(x=>`${x.nm} −${fmt(x.lost)}`);
+    const pen=r.p.stuck<-0.05?`\nPenalty: stuck in grade ${fmt(r.p.stuck)} (${r.mGr} months as ${r.rank})`:'';
+    return (top.length?'\nMost points from: '+top.join(', '):'')+(lost.length?'\nMost points missed: '+lost.join(', '):'')+pen; };
+  const poolName=g=>sep?(g==='M'?'male':'female')+' slots':'slots';
+  rows.forEach(r=>{
+    const sc=`Score ${fmt(r.total)}.`; let w='';
+    if(r.state2==='in'){
+      if(r.lock==='Manual') w='SLOTTED BY HAND (Manual = Slot), whatever the points.';
+      else if(r.lock==='Reg Zone slotted') w='KEPT: already Slotted in Reg Zone, so slotted before anyone is ranked by points.';
+      else if(r.lock==='Parent on staff') w='KEPT: a parent is on staff'+(S.mask?'':' ('+r.parentStaff+')')+', so always slotted.';
+      else { const c=sep?cutG[r.sex]:cutAll; w=`SLOTTED BY POINTS: ${sc} The lowest score slotted by points${sep?' in the '+poolName(r.sex):''} is ${fmt(c)}.`; }
+    } else if(r.state2==='alt'){
+      if(r.hold.length) w='CANNOT BE SLOTTED YET: '+r.hold.join('; ')+'. Stays on the alternate list in points order. '+sc;
+      else if(r.out&&S.oosMode!=='none'&&nOut>=oosN) w=`OUT-OF-STATE LIMIT REACHED (${S.oosMode==='max'?'at most':'exactly'} ${oosN}). ${sc} Out-of-state cadets with higher scores took those seats.`;
+      else if(sep&&r.sex!=='?'&&cnt[r.sex]>=pool[r.sex]) w=`${(r.sex==='M'?'MALE':'FEMALE')} SLOTS FULL (${pool[r.sex]}). ${sc} The lowest ${r.sex==='M'?'male':'female'} score slotted by points is ${cutG[r.sex]===null?'–':fmt(cutG[r.sex])}.`;
+      else if(!sep&&r.sex!=='?'&&isFinite(cap[r.sex])&&cnt[r.sex]>=cap[r.sex]) w=`${(r.sex==='M'?'MALE':'FEMALE')} CAP REACHED (${cap[r.sex]}). ${sc}`;
+      else w=`BELOW THE CUT: ${sc} The lowest score slotted by points is ${cutAll===null?'–':fmt(cutAll)}.`;
+    } else if(r.state2==='outpin') w='LEFT OUT BY HAND (Manual = Leave out). '+sc;
+    else w='NOT ELIGIBLE: '+r.why.join('; ')+'.';
+    r.whyText=w+(r.state2!=='inel'?factorLines(r):'');
+  });
+  if(sep){ ['M','F'].forEach(g=>{ if(cnt[g]>pool[g]) warn.push((g==='M'?'Male':'Female')+' slots are over by '+(cnt[g]-pool[g])+' because of kept, parent-on-staff or manual slots.'); });
+           const unk=rows.filter(r=>r.sex==='?'&&eligible(r)).length; if(unk) warn.push(unk+' eligible cadet(s) have no sex in Reg Zone, so separate pools cannot place them.'); }
+  else { if(n>Number(S.total)) warn.push('Slots are over by '+(n-Number(S.total))+' because of kept, parent-on-staff or manual slots.');
+         ['M','F'].forEach(g=>{ if(cnt[g]>cap[g]) warn.push((g==='M'?'Male':'Female')+' cap is exceeded by '+(cnt[g]-cap[g])+' because of kept, parent-on-staff or manual slots.'); }); }
+  if(S.oosMode!=='none'&&nOut>oosN) warn.push('Out-of-state slots are over by '+(nOut-oosN)+' because of kept, parent-on-staff or manual slots.');
+  if(S.oosMode==='exact'&&nOut<oosN) warn.push('Only '+nOut+' out-of-state cadets could be slotted (not enough eligible out-of-state cadets who can be slotted), so the other '+(oosN-nOut)+' seats went to in-state cadets.');
+  const forcedInel=rows.filter(r=>forcedIn(r)&&!eligible(r)); if(forcedInel.length) warn.push(forcedInel.length+' cadet(s) slotted by hand do not meet the requirements: '+forcedInel.map(r=>r.first+' '+r.last+' ('+r.why.join(', ')+')').join('; ')+'.');
+  RESULT={rows, cnt, n, nOut, cutScore, warn, kept, dataMaxAge, wlCount:Object.keys(wl).length};
+  render();
+}
+
+/* ---------- UI: settings ---------- */
+const FACTORS=[
+  {k:'rank', name:'Grade', help:()=>`C/AB 0 → C/CMSgt ${S.w.rank} pts (${fmt(S.w.rank/8)} per grade). Cadet officers count as C/CMSgt.`},
+  {k:'age', name:'Age', help:()=>{ const hi=S.ageAuto&&RESULT?RESULT.dataMaxAge:S.ageHi; return `Age ${S.ageLo} or younger 0 → age ${hi}${S.ageAuto?' (oldest registered)':''} or older ${S.w.age} pts, ${fmt(S.w.age/Math.max(1,hi-S.ageLo))} per year.`; },
+    extra:()=>`<div class="inline"><span class="hint">From age</span><input type="number" id="ageLo" value="${S.ageLo}" min="0" max="25"><span class="hint">to</span><input type="number" id="ageHi" value="${S.ageHi}" min="0" max="25"${S.ageAuto?' disabled':''}></div><label class="row"><span class="hint">Top of the scale = oldest cadet registered</span><input type="checkbox" id="ageAuto"${S.ageAuto?' checked':''}></label>`},
+  {k:'state', name:'Home state', help:()=>{ const st=RUNINFO.states||[]; return `Flat ${S.w.state} pts if the ${S.stateSrc==='wing'?'CAP wing':'home address state'} is ${st.length?st.join(', '):'(none yet)'}${RUNINFO.statesAuto&&st.length?' (box left blank, so the most common one among the registrations is used)':''}. The same list decides who is out of state (Slots section).`; },
+    extra:()=>`<div class="inline"><input type="text" id="states" value="${esc(S.states)}" placeholder="auto" style="width:110px" aria-label="In-state list, for example CA or CA NV"><select id="stateSrc"><option value="address">Home address state</option><option value="wing">CAP wing</option></select></div>`},
+  {k:'order', name:'Sign-up order', help:()=>{ const n=DATA?DATA.cadets.filter(c=>c.tied).length:0, W=S.w.order;
+      const base=S.tieMode==='none'?`${W} pts for the first to register, sliding down to 0 for the last (by Reg Zone RegistrationID).`
+        :`${n} cadets tied at the full ${W} pts. After them, ${W} pts sliding down to 0 for the last to register.`;
+      return base+(S.tieMode==='date'?' Reg Zone exports have no registration date, so this counts only cadets the export proves registered by then, from the last-edit dates of later registrations. That stops working once records are edited in bulk (slotting, approvals), so it may tie far fewer than you expect. For an exact cut, use "RegistrationID up to" with the highest RegistrationID from the end of that day (save an export that evening).':''); },
+    extra:()=>`<div class="inline"><span class="hint">Tie at the top:</span><select id="tieMode"><option value="none">None</option><option value="first">First N registrations</option><option value="id">RegistrationID up to</option><option value="date">Registered on or before</option></select></div>
+      <div class="inline" id="tieBox"><input type="number" id="tieN" value="${esc(S.tieN)}" min="0" aria-label="Number of registrations tied"${S.tieMode==='first'?'':' hidden'}><input type="number" id="tieId" value="${esc(S.tieId)}" min="0" style="width:110px" aria-label="Highest RegistrationID tied"${S.tieMode==='id'?'':' hidden'}><input type="date" id="tieDate" value="${esc(S.tieDate)}" aria-label="Tie date"${S.tieMode==='date'?'':' hidden'}></div>`},
+  {k:'wl', name:()=>S.wlName||'Priority list', help:()=>(RESULT&&RESULT.wlCount?'':'Paste the list in the Priority list section first. ')+(S.wlMode==='graded'?`Up to ${S.w.wl} pts: #1 on the list gets the most.`:`Flat ${S.w.wl} pts for anyone on the list.`), extra:()=>`<select id="wlMode"><option value="flat">Same points for everyone on the list</option><option value="graded">More points for a better list number</option></select>`},
+  {k:'unit', name:'Unit approval', help:()=>`${S.w.unit} pts for having unit approval.`+(S.reqUnit?' Required: without it a cadet stays on the alternate list and cannot be slotted.':' Not required.'),
+    extra:()=>`<label class="row"><span class="hint">Required to be slotted</span><input type="checkbox" id="reqUnit"${S.reqUnit?' checked':''}></label>`},
+  {k:'papp', name:'Parent approval', help:()=>`${S.w.papp} pts for having parent approval (18 and older count as having it).`+(S.reqParent?' Required: without it a cadet stays on the alternate list and cannot be slotted.':' Not required.'),
+    extra:()=>`<label class="row"><span class="hint">Required to be slotted</span><input type="checkbox" id="reqParent"${S.reqParent?' checked':''}></label>`},
+  {k:'pstaff', name:'Parent on staff', help:()=>S.autoParent?'Off: these cadets are always slotted (Slots section).':`Flat ${S.w.pstaff} pts.`},
+  {k:'tenure', name:'Time in CAP', help:()=>(RUNINFO.nExtra?'':'Needs a time-in-CAP file (see the note at the top of the page). ')+(S.tenureDir==='fewer'?`Newer members get more: 0 months = ${S.w.tenure} pts, ${RUNINFO.tenTop}+ months = 0.`:`Longer membership gets more: 0 months = 0, ${RUNINFO.tenTop}+ months = ${S.w.tenure} pts.`),
+    extra:()=>`<div class="inline"><select id="tenureDir"><option value="more">More months = more points</option><option value="fewer">Fewer months = more points</option></select></div><label class="row"><span class="hint">Full points at the longest time in CAP registered</span><input type="checkbox" id="tenureAuto"${S.tenureAuto?' checked':''}></label><div class="inline"><span class="hint">or at</span><input type="number" id="tenureTop" value="${S.tenureTop}" min="1" max="120"${S.tenureAuto?' disabled':''}><span class="hint">months</span></div>`},
+  {k:'stuck', name:'Stuck in grade (penalty)', help:()=>`Takes points AWAY: none for the first 8 weeks in a grade, then up to −${S.w.stuck} pts at ${S.stuckFull}+ months in the same grade. Never for C/CMSgt (the next step usually needs an encampment).`,
+    extra:()=>`<div class="inline"><span class="hint">Full penalty at</span><input type="number" id="stuckFull" value="${S.stuckFull}" min="3" max="48"><span class="hint">months in grade</span></div>`},
+  {k:'pace', name:'Promotion pace', help:()=>`How actively a cadet promotes: grades earned since joining, compared with the most possible. C/Amn can come right away (no time-in-grade wait); each grade after that needs 8 weeks. On pace = ${S.w.pace} pts; half the possible grades = ${fmt(S.w.pace/2)} pts. C/CMSgt counts as fully on pace.`},
+];
+const fName=f=>typeof f.name==='function'?f.name():f.name;
+function buildFactors(){
+  $('factors').innerHTML=FACTORS.map(f=>`<div class="factor" data-k="${f.k}">
+    <div class="head"><b>${esc(fName(f))}</b><span class="pts" id="pv_${f.k}">${S.w[f.k]} pts</span></div>
+    <input type="range" id="w_${f.k}" min="0" max="100" step="1" value="${S.w[f.k]}" aria-label="${esc(fName(f))} weight">
+    ${f.extra?f.extra():''}
+    <div class="hint" id="ph_${f.k}">${f.help()}</div></div>`).join('')+`<div class="hint" id="maxpts"></div><label class="row"><span class="hint">Cadets with no time-in-CAP data get</span><select id="missingMode"><option value="median">the middle (median) points</option><option value="zero">0 points</option></select></label>`;
+  FACTORS.forEach(f=>{ $('w_'+f.k).addEventListener('input',e=>{ S.w[f.k]=Number(e.target.value); refreshHelp(); changed(); }); });
+  const bind=(id,key,num)=>{ const el=$(id); if(!el) return; if(el.tagName==='SELECT') el.value=S[key]; el.addEventListener(el.tagName==='SELECT'?'change':'input',e=>{ S[key]=num?Number(e.target.value):e.target.value; refreshHelp(); changed(); }); };
+  bind('ageLo','ageLo',1); bind('ageHi','ageHi',1); bind('tenureDir','tenureDir'); bind('missingMode','missingMode'); bind('tenureTop','tenureTop',1); bind('stuckFull','stuckFull',1);
+  if($('tenureAuto')) $('tenureAuto').addEventListener('change',e=>{ S.tenureAuto=e.target.checked; $('tenureTop').disabled=S.tenureAuto; refreshHelp(); changed(); });
+  ['ageAuto','reqUnit','reqParent'].forEach(id=>{ $(id).addEventListener('change',e=>{ S[id]=e.target.checked; if(id==='ageAuto') $('ageHi').disabled=S.ageAuto; refreshHelp(); changed(); }); }); bind('states','states'); bind('stateSrc','stateSrc'); bind('tieDate','tieDate'); bind('tieN','tieN',1); bind('tieId','tieId'); bind('wlMode','wlMode');
+  $('tieMode').value=S.tieMode; $('tieMode').addEventListener('change',e=>{ S.tieMode=e.target.value; $('tieN').hidden=S.tieMode!=='first'; $('tieId').hidden=S.tieMode!=='id'; $('tieDate').hidden=S.tieMode!=='date'; refreshHelp(); changed(); });
+  refreshHelp();
+}
+function refreshHelp(){
+  FACTORS.forEach(f=>{ $('pv_'+f.k).textContent=S.w[f.k]+' pts'; $('ph_'+f.k).textContent=f.help(); });
+  $('w_pstaff').disabled=S.autoParent;
+  const max=S.w.rank+S.w.age+S.w.state+S.w.order+S.w.wl+S.w.unit+S.w.papp+S.w.tenure+S.w.pace+(S.autoParent?0:S.w.pstaff);
+  $('maxpts').textContent='Most points possible: '+max+'.';
+}
+function buildStatusChips(){
+  const sts=[...new Set(DATA.cadets.map(c=>c.status))].sort();
+  $('statusChips').innerHTML=sts.map(st=>{ const n=DATA.cadets.filter(c=>c.status===st).length; return `<button class="chip" data-st="${esc(st)}" aria-pressed="${statusIncluded(st)}">${esc(st||'(blank)')} · ${n}</button>`; }).join('');
+  $('statusChips').querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>{ const st=b.dataset.st; S.statuses[st]=!statusIncluded(st); b.setAttribute('aria-pressed',S.statuses[st]); changed(); }));
+}
+const NUMS=['total','capM','capF','poolM','poolF','minAge','maxAge','oosN'], CHECKS=['keepSlotted','autoParent','cadetsOnly'];
+function initControls(){
+  $('minRank').innerHTML=RANKS.map(r=>`<option>${r}</option>`).join('');
+  NUMS.forEach(id=>{ $(id).addEventListener('input',e=>{ S[id]=(id==='capM'||id==='capF')&&e.target.value===''?'':e.target.value===''?0:Number(e.target.value);
+    // Separate male/female: the two always add up to Total slots. Change one and the other follows; change the total and male takes up the difference.
+    const T=Number(S.total)||0;
+    if(id==='poolF'){ S.poolF=Math.min(Math.max(0,S.poolF),T); S.poolM=T-S.poolF; $('poolM').value=S.poolM; }
+    else if(id==='poolM'){ S.poolM=Math.min(Math.max(0,S.poolM),T); S.poolF=T-S.poolM; $('poolF').value=S.poolF; }
+    else if(id==='total'){ S.poolF=Math.min(Number(S.poolF)||0,T); S.poolM=T-S.poolF; $('poolM').value=S.poolM; $('poolF').value=S.poolF; }
+    changed(); }); });
+  CHECKS.forEach(id=>{ $(id).addEventListener('change',e=>{ S[id]=e.target.checked; refreshHelp(); changed(); }); });
+  $('minRank').addEventListener('change',e=>{ S.minRank=e.target.value; changed(); });
+  $('oosMode').addEventListener('change',e=>{ S.oosMode=e.target.value; $('oosN').disabled=S.oosMode==='none'; changed(); });
+  document.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener('change',e=>{ S.mode=e.target.value;
+    if(S.mode==='separate'){ const T=Number(S.total)||0; S.poolF=Math.min(Number(S.poolF)||0,T); S.poolM=T-S.poolF; $('poolM').value=S.poolM; $('poolF').value=S.poolF; }
+    showMode(); changed(); }));
+  $('wlName').value=S.wlName; $('wlName').addEventListener('input',e=>{ S.wlName=e.target.value.trim()||'Priority list'; save(); buildFactors(); buildViewChips(); run(); });
+  $('wlText').value=wlText; $('wlText').addEventListener('input',e=>{ wlText=e.target.value; saveWl(); run(); });
+  bindStatic();
+  syncValues();
+}
+function syncValues(){
+  NUMS.forEach(id=>{ $(id).value=S[id]; });
+  CHECKS.forEach(id=>{ $(id).checked=S[id]; });
+  $('minRank').value=S.minRank; $('oosMode').value=S.oosMode; $('oosN').disabled=S.oosMode==='none';
+  $('modeCombined').checked=S.mode==='combined'; $('modeSeparate').checked=S.mode==='separate';
+  showMode(); buildFactors(); buildStatusChips(); buildViewChips();
+}
+function buildViewChips(){
+  const VIEWS=[['all','All'],['in','Slotted'],['alt','Alternates'],['hold','Alternates who can\'t be slotted yet'],['inel','Not eligible'],['wl',S.wlName||'Priority list'],['ps','Parent on staff'],['oos','Out of state'],['new','To slot in Reg Zone'],['drop','Slotted in Reg Zone, out here']];
+  $('viewChips').innerHTML=VIEWS.map(([k,l])=>`<button class="chip" data-v="${k}" aria-pressed="${S.view===k}">${l}</button>`).join('');
+  $('viewChips').querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>{ S.view=b.dataset.v; $('viewChips').querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===b)); save(); render(); }));
+  $('sexChips').innerHTML=[['all','Both'],['M','Male'],['F','Female']].map(([k,l])=>`<button class="chip" data-s="${k}" aria-pressed="${S.sex===k}">${l}</button>`).join('');
+  $('sexChips').querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>{ S.sex=b.dataset.s; $('sexChips').querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===b)); save(); render(); }));
+}
+function bindStatic(){
+  $('search').addEventListener('input',render);
+  $('btnLoad').addEventListener('click',()=>$('file').click());
+  $('maskNames').checked=!!S.mask;
+  $('maskNames').addEventListener('change',e=>{ S.mask=e.target.checked; $('search').placeholder=S.mask?'Search cadet code':'Search name or CAPID'; $('whyBox').hidden=true; changed(); });
+  $('search').placeholder=S.mask?'Search cadet code':'Search name or CAPID';
+  $('whyClose').addEventListener('click',()=>{ $('whyBox').hidden=true; });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('whyBox').hidden=true; });
+  $('btnShare').addEventListener('click',()=>{ const cs=DATA.cadets, m=cs.filter(c=>c.sex==='M').length, f=cs.filter(c=>c.sex==='F').length; if(!(m+f)) return;
+    const tot=Number(S.total); S.poolM=Math.round(tot*m/(m+f)); S.poolF=tot-S.poolM; S.mode='separate'; save(); syncValues(); run();
+    toast('Separate pools set: '+S.poolM+' male, '+S.poolF+' female'); });
+  $('btnForget').addEventListener('click',()=>{ try{ localStorage.removeItem(STORE+'.data'); localStorage.removeItem(STORE+'.extra'); }catch(e){} FILES=[]; renderFiles(); EXTRA={by:{},name:'',loadedAt:''}; showExtra(); $('loadMsg').hidden=true; DATA=makeExample(); $('exampleBanner').hidden=false; $('btnForget').hidden=true; $('srcline').textContent='Example data · load a Reg Zone registration export to start'; buildStatusChips(); run(); toast('Loaded registrations and time-in-CAP data removed from this browser'); });
+  $('file').addEventListener('change',e=>{ if(e.target.files.length) readFiles([...e.target.files]); e.target.value=''; });
+  const dz=$('dropzone');
+  dz.addEventListener('dragover',e=>{ e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave',e=>{ if(e.target===dz) dz.classList.remove('over'); });
+  dz.addEventListener('drop',e=>{ e.preventDefault(); dz.classList.remove('over'); if(e.dataTransfer.files.length) readFiles([...e.dataTransfer.files]); });
+  $('btnCopySlots').addEventListener('click',()=>copyRows(r=>r.state2==='in','Slot list'));
+  $('btnCopyNew').addEventListener('click',()=>{ const ids=RESULT.rows.filter(r=>r.state2==='in'&&r.status!=='Slotted').sort((a,b)=>b.total-a.total).map(r=>r.capid); copyText(ids.join('\n'), ids.length+' CAPIDs copied'); });
+  $('btnCopyAll').addEventListener('click',()=>copyRows(()=>true,'Full results'));
+  $('btnDownload').addEventListener('click',downloadResults);
+  $('btnCopySettings').addEventListener('click',()=>{ const o={...S}; delete o.view; delete o.sex; copyText(JSON.stringify(o), 'Settings copied'); });
+  $('btnApplySettings').addEventListener('click',()=>{ try{ const o=JSON.parse($('settingsText').value); S=merge(structuredClone(DEFAULTS),o); save(); rebuild(); toast('Settings applied'); }catch(e){ toast('Those settings could not be read. Copy them again and paste the whole text.'); } });
+  $('btnReset').addEventListener('click',()=>{ $('resetConfirm').hidden=false; });
+  $('btnResetNo').addEventListener('click',()=>{ $('resetConfirm').hidden=true; });
+  $('btnResetYes').addEventListener('click',()=>{ S=structuredClone(DEFAULTS); save(); $('resetConfirm').hidden=true; rebuild(); toast('Reset to defaults'); });
+}
+function showMode(){ $('combinedBox').hidden=S.mode!=='combined'; $('separateBox').hidden=S.mode!=='separate'; }
+function rebuild(){ syncValues(); run(); }
+function changed(){ save(); run(); }
+
+/* ---------- render ---------- */
+const COLS=[
+  {k:'rank',l:'#',num:1},{k:'status',l:'Result'},{k:'total',l:'Total',num:1},{k:'pin',l:'Manual'},{k:'name',l:'Name'},{k:'capid',l:'CAPID'},{k:'sex',l:'Sex'},{k:'age',l:'Age',num:1},{k:'mcap',l:'Mo in CAP',num:1},{k:'mgr',l:'Mo in grade',num:1},{k:'st',l:'State'},
+  {k:'reg',l:'Sign-up',num:1},{k:'tags',l:'Notes'},{k:'p_rank',l:'Grade',num:1},{k:'p_age',l:'Age pts',num:1},{k:'p_state',l:'State',num:1},{k:'p_order',l:'Order',num:1},{k:'p_wl',l:'Waitlist',num:1},{k:'p_appr',l:'Approvals',num:1},{k:'p_pstaff',l:'Parent staff',num:1},{k:'p_tenure',l:'CAP time',num:1},{k:'p_pace',l:'Pace',num:1},{k:'p_stuck',l:'Stuck',num:1}
+];
+function render(){
+  if(!RESULT) return;
+  refreshHelp();
+  const R=RESULT, rows=R.rows;
+  // tiles
+  const elig=rows.filter(r=>!r.why.length);
+  const newIn=rows.filter(r=>r.state2==='in'&&r.status!=='Slotted').length;
+  const dropped=rows.filter(r=>r.status==='Slotted'&&r.state2!=='in').length;
+  const tot=Number(S.total);
+  // Registration share: if slots followed the male/female split of registrations, each side would get about this many.
+  const regM=rows.filter(r=>r.sex==='M').length, regF=rows.filter(r=>r.sex==='F').length, regMF=regM+regF;
+  const shareM=regMF?regM/regMF:0, fairM=Math.round(tot*shareM), fairF=tot-fairM;
+  const pctTxt=x=>Math.round(x*100)+'%';
+  const accM=regM?R.cnt.M/regM:0, accF=regF?R.cnt.F/regF:0;
+  $('shareNote').textContent=regMF?`Registered: ${regM} male (${pctTxt(shareM)}) and ${regF} female (${pctTxt(1-shareM)}). The same split of ${tot} slots is about ${fairM} male and ${fairF} female, which accepts both at about the same rate (${pctTxt(tot/regMF)}). Right now: ${pctTxt(accM)} of males and ${pctTxt(accF)} of females are slotted.`:'';
+  const pct=(a,b)=>b?Math.min(100,a/b*100):0;
+  const gTile=(g,label)=>{ const lim=S.mode==='separate'?Number(S[g==='M'?'poolM':'poolF']):(S[g==='M'?'capM':'capF']===''?null:Number(S[g==='M'?'capM':'capF']));
+    const regd=rows.filter(r=>r.sex===g).length;
+    return `<div class="tile"><div class="k">${label} slotted / registered</div><div class="v">${R.cnt[g]} <small>/ ${regd} · <b style="color:var(--ink)">${regd?pctTxt(R.cnt[g]/regd):'0%'}</b> accepted</small></div><div class="d">${regMF?pctTxt((g==='M'?regM:regF)/regMF)+' of registrations · '+(R.n?pctTxt(R.cnt[g]/R.n):'0%')+' of slots · same share ≈ '+(g==='M'?fairM:fairF)+' slots':''}<br>${lim!==null?(S.mode==='separate'?lim+' '+label.toLowerCase()+' slots':'cap of '+lim):'no cap'} · ${R.kept[g]} kept (already slotted)<br>Lowest ${label.toLowerCase()} score slotted by points: <b style="color:var(--ink)">${(()=>{ const xs=rows.filter(r=>r.state2==='in'&&!r.lock&&r.sex===g).map(r=>r.total); return xs.length?fmt(Math.min(...xs)):'–'; })()}</b></div>${lim!==null?`<div class="bar${R.cnt[g]>lim?' over':''}"><i style="width:${pct(R.cnt[g],lim)}%"></i></div>`:''}</div>`; };
+  $('tiles').innerHTML=
+    `<div class="tile"><div class="k">Total slotted</div><div class="v">${R.n} <small>/ ${tot} slots</small></div><div class="d">${R.kept.n} kept (already slotted) + ${R.n-R.kept.n} by points · ${rows.length} registered</div><div class="bar${R.n>tot?' over':''}"><i style="width:${pct(R.n,tot)}%"></i></div></div>`+
+    gTile('M','Male')+gTile('F','Female')+
+    `<div class="tile"><div class="k">Out-of-state slotted / registered</div><div class="v">${R.nOut} <small>/ ${rows.filter(r=>r.out).length}</small></div><div class="d">by ${S.stateSrc==='wing'?'CAP wing':'home address'} · ${S.oosMode==='none'?'no limit':(S.oosMode==='max'?'at most ':'exactly ')+S.oosN}${R.kept.out?' · '+R.kept.out+' kept (already slotted)':''}</div></div>`+
+    `<div class="tile"><div class="k">Lowest slotted / highest score</div><div class="v">${R.cutScore===null?'–':fmt(R.cutScore)} <small>/ ${rows.length?fmt(Math.max(...rows.map(r=>r.total))):'–'}</small></div><div class="d">lowest = last cadet slotted by points (kept and manual not counted) · highest = top score of anyone</div></div>`+
+    `<div class="tile"><div class="k">Alternates (not slotted)</div><div class="v">${rows.filter(r=>r.state2==='alt').length}</div><div class="d">${rows.filter(r=>r.state2==='alt'&&r.hold.length).length} of them can't be slotted yet (missing approval or grade) · ${rows.filter(r=>r.state2==='inel').length} not eligible at all</div></div>`+
+    `<div class="tile"><div class="k">Changes vs Reg Zone</div><div class="v">+${newIn} <small>/ −${dropped}</small></div><div class="d">+ slotted here but not yet in Reg Zone · − slotted in Reg Zone but not here</div></div>`;
+  const k=R.kept, lockLabel=[S.keepSlotted?'already Slotted in Reg Zone':'', S.autoParent?'parent on staff':''].filter(Boolean).join(' or ')||'kept';
+  $('slotNote').textContent=S.mode==='separate'
+    ? `${k.n} kept (${lockLabel}, or set by hand): ${k.M} male, ${k.F} female. Open by points: ${Math.max(0,Number(S.poolM)-k.M)} male, ${Math.max(0,Number(S.poolF)-k.F)} female.`
+    : `${k.n} kept (${lockLabel}, or set by hand): ${k.M} male, ${k.F} female. Open by points: ${Math.max(0,Number(S.total)-k.n)}.`;
+  $('oosNote').textContent=`Out of state = ${S.stateSrc==='wing'?'CAP wing':'home address state'} is not ${S.states||'(set in Points > Home state)'}. ${rows.filter(r=>r.out).length} registered now. "Exactly" fills the out-of-state seats first, by points.`;
+  { const ages=[...new Set(rows.map(r=>r.age).filter(a=>a!==null))].sort((a,b)=>a-b);
+    const cell=(f)=>{ const reg=rows.filter(f).length, inn=rows.filter(r=>f(r)&&r.state2==='in').length; return reg?`<b>${inn}</b>/${reg} <span class="hint">${Math.round(inn/reg*100)}%</span>`:'<span class="hint">–</span>'; };
+    $('ageLine').innerHTML='<div class="agebox"><table class="agetbl"><thead><tr><th>Age</th>'+ages.map(a=>`<th>${a}</th>`).join('')+'<th>All</th></tr></thead><tbody>'+
+      [['All',r=>true],['Male',r=>r.sex==='M'],['Female',r=>r.sex==='F']].map(([lab,g])=>`<tr><th>${lab}</th>`+ages.map(a=>`<td>${cell(r=>g(r)&&r.age===a)}</td>`).join('')+`<td>${cell(g)}</td></tr>`).join('')+
+      '</tbody></table></div><div class="hint">Slotted / registered, and the percent accepted, by age and sex.</div>'; }
+  $('warnings').innerHTML=R.warn.map(w=>`<div class="warn">${esc(w)}</div>`).join('');
+  // filter
+  const q=lc($('search').value);
+  let list=rows.filter(r=>{
+    if(S.sex!=='all'&&r.sex!==S.sex) return false;
+    switch(S.view){ case 'in': if(r.state2!=='in') return false; break; case 'alt': if(r.state2!=='alt') return false; break; case 'hold': if(!(r.state2==='alt'&&r.hold.length)) return false; break;
+      case 'inel': if(!(r.state2==='inel'||r.state2==='outpin')) return false; break; case 'wl': if(r.wlPos===null) return false; break;
+      case 'ps': if(!r.parentStaff) return false; break; case 'oos': if(!r.out) return false; break; case 'new': if(!(r.state2==='in'&&r.status!=='Slotted')) return false; break;
+      case 'drop': if(!(r.status==='Slotted'&&r.state2!=='in')) return false; break; }
+    if(q && (S.mask ? !lc(maskCode(r.capid)).includes(q) : !(lc(r.first+' '+r.last).includes(q)||lc(r.last+' '+r.first).includes(q)||r.capid.includes(q)))) return false;
+    return true;
+  });
+  const order={in:0,alt:1,outpin:2,inel:3};
+  const byScore=(a,b)=>order[a.state2]-order[b.state2]||b.total-a.total||a.regId-b.regId;
+  const keyf={name:r=>(r.last+' '+r.first).toLowerCase(),capid:r=>r.capid,sex:r=>r.sex,age:r=>r.age??-1,mcap:r=>r.mCap??-1,mgr:r=>r.mGr??-1,p_tenure:r=>r.p.tenure,p_pace:r=>r.p.pace,p_stuck:r=>r.p.stuck,st:r=>S.stateSrc==='wing'?r.wing:r.state,reg:r=>r.regId,status:r=>order[r.state2]*1e4+(r.alt||0),
+    p_rank:r=>r.p.rank,p_age:r=>r.p.age,p_state:r=>r.p.state,p_order:r=>r.p.order,p_wl:r=>r.p.wl,p_appr:r=>r.p.appr,p_pstaff:r=>r.p.pstaff,total:r=>r.total,tags:r=>r.wlPos??999,pin:r=>r.pin};
+  if(S.sort==='rank'||!keyf[S.sort]) list.sort(byScore);
+  else list.sort((a,b)=>{ const x=keyf[S.sort](a), y=keyf[S.sort](b); return (x<y?-1:x>y?1:0)*S.sortDir||byScore(a,b); });
+  // regid order position
+  const regOrder=[...rows].sort((a,b)=>a.regId-b.regId); const pos=new Map(regOrder.map((r,i)=>[r.capid,i+1]));
+  // Point columns show only when that factor can give points right now (weight above 0); set a weight and the column comes back.
+  const PV={p_rank:S.w.rank>0, p_age:S.w.age>0, p_state:S.w.state>0, p_order:S.w.order>0, p_wl:S.w.wl>0, p_appr:(S.w.unit+S.w.papp)>0, p_pstaff:!S.autoParent&&S.w.pstaff>0, p_tenure:S.w.tenure>0, p_pace:S.w.pace>0, p_stuck:S.w.stuck>0};
+  const PK={p_rank:'rank',p_age:'age',p_state:'state',p_order:'order',p_wl:'wl',p_appr:'appr',p_pstaff:'pstaff',p_tenure:'tenure',p_pace:'pace',p_stuck:'stuck'};
+  const SHOWN=COLS.filter(c=>!(c.k in PV)||PV[c.k]);
+  const ptKeys=SHOWN.filter(c=>c.k in PV).map(c=>PK[c.k]);
+  $('tbl').querySelector('thead').innerHTML='<tr>'+SHOWN.map(c=>`<th class="${c.num?'num':''}" data-k="${c.k}" title="Sort">${c.l}${S.sort===c.k?(S.sortDir>0?' ↑':' ↓'):''}</th>`).join('')+'</tr>';
+  $('tbl').querySelectorAll('th').forEach(th=>th.addEventListener('click',()=>{ const k=th.dataset.k; if(S.sort===k) S.sortDir*=-1; else { S.sort=k; S.sortDir=(k==='total'||k.startsWith('p_'))?-1:1; } save(); render(); }));
+  let html='', seenAlt=false, i=0;
+  const showCut=S.sort==='rank';
+  for(const r of list){
+    i++;
+    if(showCut && r.state2!=='in' && !seenAlt){ seenAlt=true; if(i>1) html+=`<tr class="cut"><td colspan="${SHOWN.length}">Slot line${S.sex!=='all'?' ('+(S.sex==='M'?'male':'female')+')':''} · ${R.n} slotted</td></tr>`; }
+    const pill0=r.state2==='in'?`<span class="pill in">Slot</span>`:r.state2==='alt'?`<span class="pill alt">Alt ${S.sex!=='all'||S.mode==='separate'?r.altG:r.alt}</span>`:r.state2==='outpin'?`<span class="pill out">Left out</span>`:`<span class="pill out">Not eligible</span>`;
+    const pill=`<span class="why" tabindex="0" title="${esc(r.whyText||'')}" aria-label="${esc(r.whyText||'')}">${pill0}<span class="whyq">?</span></span>`;
+    const tags=[r.lock?`<span class="tag lock">${esc(r.lock)}</span>`:'', r.status==='Slotted'?`<span class="tag rz">Reg Zone: Slotted</span>`:'', r.wlPos!==null?`<span class="tag wl">${esc(S.wlName||'Priority list')}${r.wlPos?' #'+r.wlPos:''}</span>`:'',
+      r.parentStaff?(S.mask?`<span class="tag ps">Parent on staff</span>`:`<span class="tag ps" title="${esc(r.parentStaff)}">Parent: ${esc(r.parentStaff)}</span>`):'', ...r.hold.map(w=>`<span class="tag why">Can't slot: ${esc(w.toLowerCase())}</span>`), ...r.why.map(w=>`<span class="tag why">${esc(w)}</span>`)].join('');
+    const st=S.stateSrc==='wing'?r.wing:r.state;
+    html+=`<tr class="${r.state2==='inel'||r.state2==='outpin'?'inel':''}"><td class="num">${i}</td><td>${pill}</td><td class="num total">${fmt(r.total)}</td>
+      <td><select data-cap="${esc(r.capid)}" aria-label="Manual choice for ${S.mask?esc(maskCode(r.capid)):esc(r.first)+' '+esc(r.last)}"><option value="">Auto</option><option value="in"${r.pin==='in'?' selected':''}>Slot</option><option value="out"${r.pin==='out'?' selected':''}>Leave out</option></select></td><td><span class="gr">${esc(r.rank)}</span><span class="nm">${S.mask?esc(maskCode(r.capid)):esc(r.last)+', '+esc(r.first)}</span></td><td class="num">${S.mask?'•••':esc(r.capid)}</td><td>${r.sex}</td><td class="num">${r.age??''}</td><td class="num"${r.capFixed?` title="The file says ${r.mCapFile} months in CAP but ${r.mGr} months in grade, which cannot both be right (probably a member who rejoined). Using ${r.mCap} months."`:''}>${r.mCap??''}${r.capFixed?'<span class="hint">*</span>':''}</td><td class="num">${r.mGr??''}</td><td>${esc(st)}${r.out?' <span class="tag oos" title="Out of state">OOS</span>':''}</td>
+      <td class="num">${pos.get(r.capid)}${r.tied?' <span class="hint">tied</span>':''}</td><td class="notes">${tags}</td>
+      ${ptKeys.map(k=>`<td class="num">${fmt(r.p[k])}</td>`).join('')}</tr>`;
+  }
+  if(!list.length) html=`<tr><td colspan="${SHOWN.length}" style="text-align:center;padding:24px;color:var(--muted)">No cadets match this view.</td></tr>`;
+  $('tbl').querySelector('tbody').innerHTML=html;
+  $('tbl').querySelectorAll('td select').forEach(s=>s.addEventListener('change',e=>{ const c=e.target.dataset.cap; if(e.target.value) S.pins[c]=e.target.value; else delete S.pins[c]; changed(); }));
+  // Click or tap a Result to see why (hover also shows it on a computer)
+  $('tbl').querySelectorAll('.why').forEach(el=>{ const show=()=>{ const tr=el.closest('tr'); $('whyText').innerHTML='<b>'+esc(tr.querySelector('.nm').textContent)+'</b>'+esc(el.getAttribute('title')||''); $('whyBox').hidden=false; };
+    el.addEventListener('click',show); el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); show(); } }); });
+  const pins=Object.keys(S.pins).length;
+  $('foot').textContent=`Showing ${list.length} of ${rows.length}. ${pins?pins+' manual choice(s) set. ':''}${R.wlCount?R.wlCount+' CAPIDs on the '+esc(S.wlName||'priority list')+'. ':''}${DATA.example?'':DATA.staffCount?'Parents on staff matched by email, phone, home address, emergency contact name, or same last name and unit.':''}`;
+  $('wlCount').textContent=R.wlCount?`${R.wlCount} CAPIDs read · ${rows.filter(r=>r.wlPos!==null).length} of them registered here.`:'No waitlist entered.';
+}
+
+/* ---------- copy ---------- */
+function resultTable(filter){
+  const regOrder=[...RESULT.rows].sort((a,b)=>a.regId-b.regId); const pos=new Map(regOrder.map((r,i)=>[r.capid,i+1]));
+  const O={in:0,alt:1,outpin:2,inel:3};
+  const list=RESULT.rows.filter(filter).sort((a,b)=>O[a.state2]-O[b.state2]||b.total-a.total||a.regId-b.regId);
+  const n1=x=>Math.round(x*10)/10;
+  const head=['Result','Alt #','Alt # in male/female line','CAPID','Grade','Last name','First name','Sex','Age','State','Out of state','Sign-up #','RegistrationID','Reg Zone status',(S.wlName||'Priority list')+' #','Parent on staff','Grade pts','Age pts','State pts','Order pts','List pts','Approval pts','Parent-on-staff pts','Months in CAP','Months in grade','CAP time pts','Pace pts','Stuck-in-grade penalty','Total','Kept / manual','Cannot be slotted because','Not eligible because'];
+  const rows=list.map(r=>[{in:'Slot',alt:'Alternate',outpin:'Left out',inel:'Not eligible'}[r.state2],r.alt||'',r.altG||'',r.capid,r.rank,r.last,r.first,r.sex,r.age??'',stateOf(r),r.out?'Yes':'',pos.get(r.capid),r.regId||'',r.status,r.wlPos??'',r.parentStaff,
+    n1(r.p.rank),n1(r.p.age),n1(r.p.state),n1(r.p.order),n1(r.p.wl),n1(r.p.appr),n1(r.p.pstaff),r.mCap??'',r.mGr??'',n1(r.p.tenure),n1(r.p.pace),n1(r.p.stuck),n1(r.total),r.lock,r.hold.join('; '),r.why.join('; ')]);
+  return [head,...rows];
+}
+function copyRows(filter,label){
+  const t=resultTable(filter);
+  copyText(t.map(r=>r.join('\t')).join('\n'), label+' copied ('+(t.length-1)+' rows). Paste into a spreadsheet.');
+}
+function downloadResults(){
+  const wb=XLSX.utils.book_new();
+  const add=(aoa,name,widths)=>{ const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=widths; if(aoa.length>1) ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})}; XLSX.utils.book_append_sheet(wb,ws,name); };
+  const w=resultTable(()=>true)[0].map((h,i)=>({wch:[5,6].includes(i)?16:Math.max(8,Math.min(28,String(h).length+2))}));
+  add(resultTable(r=>r.state2==='in'),'Slot list',w);
+  add(resultTable(r=>r.state2==='in'&&r.status!=='Slotted'),'To slot in Reg Zone',w);
+  add(resultTable(r=>r.status==='Slotted'&&r.state2!=='in'),'Slotted in RZ, out here',w);
+  add(resultTable(()=>true),'All results',w);
+  const o={...S}; delete o.view; delete o.sex; delete o.sort; delete o.sortDir;
+  add([['Setting','Value'],['Activity',DATA.ev||''],['Files',(DATA.files||[]).join(' + ')],['Made',new Date().toLocaleString()],['Settings (paste into Save and share settings)',JSON.stringify(o)]],'Settings',[{wch:44},{wch:100}]);
+  const day=isoDay(new Date());
+  XLSX.writeFile(wb,'Slotting_'+String(DATA.ev||'activity').replace(/[^A-Za-z0-9]+/g,'_').slice(0,40)+'_'+day+'.xlsx');
+  toast('Downloaded the results workbook');
+}
+function copyText(t,msg){
+  const fb=$('copyFallback');
+  const fallback=()=>{ fb.hidden=false; fb.value=t; fb.focus(); fb.select(); toast('Select all and copy from the box below the buttons.'); };
+  try{ navigator.clipboard.writeText(t).then(()=>{ fb.hidden=true; toast(msg); }, fallback); }catch(e){ fallback(); }
+}
+
+DATA = loadSaved() || makeExample();
+setTimeout(showExtra,0);
+initControls(); if(!DATA.example) showSource(); run();
+})();
+</script>
+</body>
+</html>
